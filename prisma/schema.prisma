@@ -1,0 +1,148 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id Int @id @default(autoincrement())
+  name String
+  email String @unique
+  password String
+  isAdmin Boolean @default(false)
+  location Location relation(fields: [locationId], references: [id])
+
+  posts Post[]
+  messageSent Message[] @relation("SentMessages")  
+  messageReceived Message[] @relation("ReceivedMessages")
+  likes Likes[]
+  follows Follow[] @relation("Following")
+  followers Follow[] @relation("Followers")
+  favorites Favorite[]
+}
+
+model Post {
+  id Int @id @default(autoincrement())
+  title String
+  description String
+  is Available Boolean @default(true)
+
+  shippingCost Float
+  shippingResponsibility String // "receiver", "giver", "shared"
+
+  isFeatured Boolean @default(false)
+  trendingScore Int @default(0)
+
+  user User @relation(fields: [userId], references:[id])
+  userId Int
+
+  category Category @relation(fields: [categoryId], references: [id])
+  categoryId Int
+
+  location Location @relation(fields:[categoryId], references: [id])
+  Location Id Int
+
+  images Image[]
+  media Media []
+  likes Like[]
+  favorites Favorite[]
+
+  createdAt DateTime @default(now())
+
+  collection Collection[] @relation("PostCollections", references: [id])
+}
+
+model Message {
+  id Int @id @default(autoincrement())
+  content String
+  timestamp DateTime @default(now())
+
+  sender User @relation("SentMessages", fields: [senderId], references: [id])
+  senderId Int
+  
+  receiver User @relation("ReceivedMessages", fields: [receiverId], referemces:[id])
+  receiverId Int 
+}
+
+model Category {
+  id Int @id @default(autoincrement())
+  name String @unique
+
+  posts Post[]
+}
+
+model Image {
+  id Int @id @default(autoincrement())
+  type String // "video", "audio", etc.
+  url String
+  post Post @relation(fields: [postId], references: [id])
+  postId Int
+}
+
+model Media {
+  id Int @id @default(autoincrement())
+  type String // "video, audio, etc"
+  url String
+  post Post @relation(fields: [postId], references: [id])
+}
+
+model Location {
+  id Int @id @default(autoincrement())
+  city String
+  country String
+  latitude Float
+  longitude Float
+
+  users User[]
+  posts Post[]
+}
+
+model Favorite {
+  id Int @id @default(autoincrement())
+  user User @relation(fields: [userId], references: [id])
+  userId Int
+  post Post @relation(fields: [postId], references: [id])
+  postId Int
+
+  @@unique([userId, postId])
+}
+
+model Comment {
+  id Int @id @default(autoincrement())
+  content String
+  user User @relation(fields: [userId], references: [id])
+  userId Int
+  post Post @relation(fields: [postId], refernces: [id])
+  postId Int
+
+  createdAt DateTime @default(now())
+}
+
+model Like {
+  id Int @id @default(autoincrement())
+  user User @relation(fields: [userId], references: [id])
+  userId
+  post Post @relation(fields: [postId], references: [id])
+  postId Int
+
+  @@unique([followerId], followingId)
+}
+
+model Collection {
+  id Int @id @default(autoincrement())
+  name String
+  user User @relation(fields: [userId], references: [id])
+  userId Int
+  posts Post[] @relation("PostCollections", references: [id])
+  }
+
