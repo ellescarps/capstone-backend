@@ -6,7 +6,6 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
 }
 
 datasource db {
@@ -19,47 +18,56 @@ model User {
   name String
   email String @unique
   password String
+  profilePicUrl String
   isAdmin Boolean @default(false)
-  location Location relation(fields: [locationId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+  locationId Int
+
+  shippingOption ShippingOption?
+  shippingResponsibility  ShippingResponsibility 
 
   posts Post[]
+  comments Comment[]
+  collections Collection[]
   messageSent Message[] @relation("SentMessages")  
   messageReceived Message[] @relation("ReceivedMessages")
-  likes Likes[]
+  likes Like[]
   follows Follow[] @relation("Following")
   followers Follow[] @relation("Followers")
   favorites Favorite[]
+
 }
 
 model Post {
   id Int @id @default(autoincrement())
   title String
   description String
-  is Available Boolean @default(true)
+  isAvailable Boolean @default(true)
 
   shippingCost Float
-  shippingResponsibility String // "receiver", "giver", "shared"
+  shippingResponsibility ShippingResponsibility// "receiver", "giver", "shared"
+  shippingOption ShippingOption
 
   isFeatured Boolean @default(false)
   trendingScore Int @default(0)
+  createdAt DateTime @default(now())
 
-  user User @relation(fields: [userId], references:[id])
+  user User @relation(fields: [userId], references:  [id])
   userId Int
 
   category Category @relation(fields: [categoryId], references: [id])
   categoryId Int
 
-  location Location @relation(fields:[categoryId], references: [id])
-  Location Id Int
+  location Location @relation(fields:[locationId], references: [id])
+  locationId Int
 
   images Image[]
-  media Media []
+  media Media[]
   likes Like[]
   favorites Favorite[]
+  comments Comment[]
 
-  createdAt DateTime @default(now())
-
-  collection Collection[] @relation("PostCollections", references: [id])
+  collections Collection[] @relation("PostCollections")
 }
 
 model Message {
@@ -70,20 +78,18 @@ model Message {
   sender User @relation("SentMessages", fields: [senderId], references: [id])
   senderId Int
   
-  receiver User @relation("ReceivedMessages", fields: [receiverId], referemces:[id])
+  receiver User @relation("ReceivedMessages", fields: [receiverId], references:[id])
   receiverId Int 
 }
 
 model Category {
   id Int @id @default(autoincrement())
   name String @unique
-
   posts Post[]
 }
 
 model Image {
   id Int @id @default(autoincrement())
-  type String // "video", "audio", etc.
   url String
   post Post @relation(fields: [postId], references: [id])
   postId Int
@@ -94,12 +100,21 @@ model Media {
   type String // "video, audio, etc"
   url String
   post Post @relation(fields: [postId], references: [id])
+  postId Int
+}
+
+model Country {
+  id     Int     @id @default(autoincrement())
+  name   String  @unique
+  code   String  // Optional: for ISO or custom codes
+  locations Location[]
 }
 
 model Location {
   id Int @id @default(autoincrement())
   city String
-  country String
+  country Country @relation(fields: [countryId], references: [id])
+  countryId Int
   latitude Float
   longitude Float
 
@@ -120,29 +135,54 @@ model Favorite {
 model Comment {
   id Int @id @default(autoincrement())
   content String
+  createdAt DateTime @default(now())
+
   user User @relation(fields: [userId], references: [id])
   userId Int
-  post Post @relation(fields: [postId], refernces: [id])
+
+  post Post @relation(fields: [postId], references: [id])
   postId Int
 
-  createdAt DateTime @default(now())
+  
 }
 
 model Like {
   id Int @id @default(autoincrement())
   user User @relation(fields: [userId], references: [id])
-  userId
+  userId Int
   post Post @relation(fields: [postId], references: [id])
   postId Int
 
-  @@unique([followerId], followingId)
+  @@unique([userId, postId])
 }
+
+model Follow {
+  id         Int  @id @default(autoincrement())
+  follower   User @relation("Followers", fields: [followerId], references: [id])
+  followerId Int
+  following  User @relation("Following", fields: [followingId], references: [id])
+  followingId Int
+
+  @@unique([followerId, followingId])
+}
+
 
 model Collection {
   id Int @id @default(autoincrement())
   name String
   user User @relation(fields: [userId], references: [id])
   userId Int
-  posts Post[] @relation("PostCollections", references: [id])
+  posts Post[] @relation("PostCollections")
   }
 
+enum ShippingResponsibility {
+  GIVER
+  RECEIVER
+  SHARED
+}
+
+enum ShippingOption {
+  PICKUP
+  SHIPPING
+  BOTH
+}
