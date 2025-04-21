@@ -80,6 +80,19 @@ app.post("/api/login", async (req,res, next) => {
     }
 });
 
+// Get users
+app.get('/api/user', async (req, res, next) => {
+    try {
+        const user = await prisma.user.findUnique({
+            where: { id }, 
+        });
+        res.json(user);
+    } catch (error) {
+        next(error);
+    }
+});
+
+
 // GET user profile
 app.get("/api/user/:id", async (req, res, next) => {
     try {
@@ -92,6 +105,26 @@ app.get("/api/user/:id", async (req, res, next) => {
         next(error);
     }
 });
+
+app.get("/api/user/:id/posts", async (req, res, next) => {
+    const userId = parseInt(req.params.id, 10);
+  
+    try {
+      const posts = await prisma.post.findMany({
+        where: { userId: userId },
+        include: {
+          images: true,
+          likes: true,
+          favorites: true,
+          comments: true,
+        },
+      });
+  
+      res.json(posts);
+    } catch (error) {
+        next(error);
+    }
+  });
 
 // EDIT
 app.put("/api/user/:id", authenticate, async (req, res, next) => {
@@ -173,8 +206,14 @@ app.post("/api/posts", authenticate, async (req, res, next) => {
             shippingOption,
             isFeatured,
             categoryId,
-            locationId,} = req.body;
-        const post = await prisma.post.create({
+            locationId,
+            type,} = req.body;
+
+            if (type !== 'post' && type !== 'callout') {
+                return res.status(400).json({ error: 'Invalid type. Must be "post" or "callout".' });
+              }
+
+        const newPost = await prisma.post.create({
             data: {
                 title,
                 description,
@@ -183,19 +222,28 @@ app.post("/api/posts", authenticate, async (req, res, next) => {
                 shippingResponsibility,
                 shippingOption,
                 isFeatured,
+                type,
                 userId: req.admin.id,
                 categoryId,
                 locationId,
             }
         });
-        res.json(post);
+
+          // Based on the type, you could perform different logic here
+    if (newPost.type === 'post') {
+        // Handle posts differently, e.g., add to giveaway section
+      } else if (newPost.type === 'callout') {
+        // Handle callouts differently, e.g., add to request section
+      }
+
+        res.json(newPost);
     } catch (error) {
         next(error);
     }
 });
 
 // EDIT
-app.put("/api/post/:id", async (req, res, next) => {
+app.put("/api/posts/:id", async (req, res, next) => {
     try {
         const {
             title,
@@ -591,13 +639,13 @@ app.post("/api/collections", authenticate, async (req, res, next) => {
     }
 });
 
-app.post("/api/collections/:collectionId/add", authenticate, async (req, res, next) => {
+app.post("/api/collections/:id/add", authenticate, async (req, res, next) => {
     try {
         const { postId } = req.body;
-        const collectionId = parseInt(req.params.collectionId);
+        const id = parseInt(req.params.id);
         
         const collection = await prisma.collection.update({
-            where: { id: collectionId },
+            where: { id: id },
             data: {
                 posts: {
                     connect: { id: postId },
@@ -612,13 +660,13 @@ app.post("/api/collections/:collectionId/add", authenticate, async (req, res, ne
     }
 });
 
-app.delete("/api/collections/:collectionId/remove", authenticate, async (req, res, next) => {
+app.delete("/api/collections/:id/remove", authenticate, async (req, res, next) => {
     try {
      const { postId } = req.body;
-     const collectionId = parseInt(req.params.collectionId);
+     const id = parseInt(req.params.id);
 
     const collection = await prisma.collection.update({
-        where: { id: collectionId },
+        where: { id: id },
         data: {
             posts: {
                 disconnect: { id: postId },
@@ -633,12 +681,12 @@ app.delete("/api/collections/:collectionId/remove", authenticate, async (req, re
     }
 });
 
-app.delete("/api/collections/:collectionId", authenticate, async (req, res, next) => {
+app.delete("/api/collections/:id", authenticate, async (req, res, next) => {
     try {
-        const collectionId = parseInt(req.params.collectionId);
+        const id = parseInt(req.params.id);
 
         await prisma.collection.delete({
-            where: { id: collectionId },
+            where: { id: id },
         });
 
         res.json({ message: "Collection deleted" });

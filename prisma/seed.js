@@ -6,7 +6,12 @@ const prisma = require("../prisma");
 const seed = async () => {
 
 const createUserWithHashedPassword = async (name, email, password, isAdmin, locationId, shippingResponsibility, shippingOption, profilePicUrl) => {
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    const existingUser = await prisma.user.findUnique({
+        where: { email }
+    });
+    
+    if (!existingUser) {
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     await prisma.user.create({
         data: {
@@ -20,6 +25,9 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
             profilePicUrl,
           },
     });
+} else {
+    console.log(`User with email ${email} already exists.`);
+}
 };
 
 
@@ -41,7 +49,10 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
             code: "KA",
         }, 
     ];
-        await prisma.country.createMany( { data: countries });
+        await prisma.country.createMany( { 
+            data: countries,
+            skipDuplicates: true, 
+         });
   };
 
 
@@ -74,11 +85,24 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
             countryId: countries.find(c => c.code === "TI").id,
         },
      ];
-     await prisma.location.createMany({ data: locations });
-  };
+     for (const location of locations) {
+        const existingLocation = await prisma.location.findFirst({
+            where: {
+              city: location.city,
+              countryId: location.countryId, // optional but helpful if cities repeat
+            },
+          });
+    
+        if (!existingLocation) {
+          await prisma.location.create({
+            data: location,
+          });
+        }
+      }
+};
 
   const createCategory = async () => {
-    const category = [
+    const categories = [
         { name: "Clothing"},
         { name: "Home Goods" },
         { name: "Furniture"},
@@ -94,8 +118,16 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
         { name: "Musical Instruments"},
         { name: "Health & Beauty"},
     ];
-     await prisma.category.createMany({ data: category });
-  };
+    for (let category of categories) {
+        await prisma.category.upsert({
+          where: { name: category.name }, // Use a unique identifier like name
+          update: {}, // No need to update anything if the category already exists
+          create: {
+            name: category.name,
+          },
+        });
+      }
+};
 
   const createUsers = async () => {
     const locations = await prisma.location.findMany();  
@@ -110,6 +142,13 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
         locationId: locations.find(l => l.city === "New York City").id,
         shippingResponsibility: "SHARED",
         shippingOption: "BOTH",
+        bio: "Mutual Aid and Community Activist",
+        websiteUrl: "https://michelle-rose.dev",
+        socialLinks: {
+         instagram: "https://instagram.com/michelle.rose",
+         twitter: "https://twitter.com/michellecodes",
+         linkedin: "https://linkedin.com/in/michellerose",
+         },
        },
        {
         name: "Luna B",
@@ -120,13 +159,36 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
         locationId: locations.find(l => l.city === "New York City").id,
         shippingResponsibility: "GIVER",
         shippingOption: "SHIPPING",
-       },
+        bio: "Moonchild sharing love & light",
+        website: "https://lunab.dev",
+        socialLinks: {
+         instagram: "https://instagram.com/lunab",
+         tiktok: "https://tiktok.com/@lunab",
+            },
+        },
     ];
    // Use the helper function for creating users with hashed passwords
    for (const user of users) {
     await createUserWithHashedPassword(user.name, user.email, user.password, user.isAdmin, user.locationId, user.shippingResponsibility, user.shippingOption, user.profilePicUrl);
 }
  };
+
+ const updateUser = async (userId, updatedData) => {
+    const user = await prisma.user.findUnique({
+        where: { id: userId }
+    });
+
+    if (user) {
+        await prisma.user.update({
+            where: { id: userId },
+            data: updatedData
+        });
+    } else {
+        console.log(`User with ID ${userId} not found`);
+    }
+};
+
+
 
  const createPosts = async () => {
     const users = await prisma.user.findMany();
@@ -146,6 +208,7 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
         userId: users[0].id,
         categoryId: categories.find( c => c.name === "Books").id,
         locationId: locations.find(l => l.city === "New York City").id,
+        type: "post",
         },
         {
             title: "the Green Witch Tarot Companion",
@@ -159,6 +222,7 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
             userId: users[0].id,
             categoryId: categories.find( c => c.name === "Books").id,
             locationId: locations.find(l => l.city === "New York City").id,
+            type: "callout",
         },
         {
             title: "One Day, Everyone Will Have Always Been Against This",
@@ -172,10 +236,21 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
             userId: users[0].id,
             categoryId: categories.find( c => c.name === "Books").id,
             locationId: locations.find(l => l.city === "New York City").id,
+            type: "post",
         },
     ];
-    await prisma.post.createMany( { data: posts });
- };
+    for (const post of posts) {
+        const existingPost = await prisma.post.findFirst({
+            where: { title: post.title }
+          });
+
+        if (!existingPost) {
+          await prisma.post.create({
+            data: post,
+          });
+        }
+      }
+};
 
  const createLikes= async () => {
     const posts = await prisma.post.findMany();
@@ -191,8 +266,27 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
         postId: posts[0].id,
        },
     ];
-    await prisma.like.createMany({ data:likes })
- };
+    // Loop through the likes array and check if the like already exists
+    for (const like of likes) {
+        const existingLike = await prisma.like.findUnique({
+            where: {
+                userId_postId: {
+                    userId: like.userId,
+                    postId: like.postId,
+                },
+            },
+        });
+
+        if (!existingLike) {
+            // If the like doesn't exist, create it
+            await prisma.like.create({
+                data: like,
+            });
+        } else {
+            console.log(`Like already exists for user ${like.userId} on post ${like.postId}`);
+        }
+    }
+};
 
  const createComments = async () => {
     const posts = await prisma.post.findMany();
@@ -205,8 +299,22 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
         postId: posts[0].id,
        },
     ];
-    await prisma.comment.createMany( { data: comments })
- };
+    for (const comment of comments) {
+        const existingComment = await prisma.comment.findFirst({
+            where: {
+                userId: comment.userId,
+                postId: comment.postId,
+            }
+        });
+
+    
+        if (!existingComment) {
+          await prisma.comment.create({
+            data: comment,
+          });
+        }
+      }
+};
 
  const createFavorites= async () => {
     const posts = await prisma.post.findMany();
@@ -223,8 +331,27 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
             postId: posts[2].id,
         },
     ];
-    await prisma.favorite.createMany( { data: favorites });
- };
+    for (const favorite of favorites) {
+        const existingFavorite = await prisma.favorite.findUnique({
+            where: {
+                userId_postId: {
+                    userId: favorite.userId,
+                    postId: favorite.postId,
+                },
+            },
+        });
+
+        if (!existingFavorite) {
+            await prisma.favorite.create({
+                data: favorite,
+            });
+            console.log(`Favorite added for user ${favorite.userId} on post ${favorite.postId}`);
+        } else {
+            console.log(`Favorite already exists for user ${favorite.userId} on post ${favorite.postId}`);
+        }
+    }
+};
+
 
  const createMessages = async () => {
     const users = await prisma.user.findMany();
@@ -241,8 +368,22 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
             receiverId: users[0].id,
           },
     ];
-    await prisma.message.createMany( { data: messages} );
- };
+    for (const message of messages) {
+        const existingMessage = await prisma.message.findFirst({
+            where: {
+              senderId: message.senderId,
+              receiverId: message.receiverId,
+              content: message.content,
+            },
+          });
+    
+        if (!existingMessage) {
+          await prisma.message.create({
+            data: message,
+          });
+        }
+      }
+};
 
  const createFollows = async () => {
     const users = await prisma.user.findMany();
@@ -257,13 +398,31 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
             followingId: users[0].id,
           },
     ];
-    await prisma.follow.createMany( {data: follows});
- };
+    for (const follow of follows) {
+        const existingFollow = await prisma.follow.findUnique({
+            where: {
+                followerId_followingId: {
+                    followerId: follow.followerId,
+                    followingId: follow.followingId,
+                },
+            },
+        });
+
+        if (!existingFollow) {
+            await prisma.follow.create({
+                data: follow,
+            });
+            console.log(`Follow relationship created for ${follow.followerId} following ${follow.followingId}`);
+        } else {
+            console.log(`Follow relationship already exists for ${follow.followerId} following ${follow.followingId}`);
+        }
+    }
+};
 
  const createCollections = async () => {
     const users = await prisma.user.findMany();
 
-    const collection = [
+    const collections = [
        {
         name: "Books To Read",
         userId: users[0].id
@@ -273,8 +432,26 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
         userId: users[1].id
        },
     ];
-   await prisma.collection.createMany( { data: collection });
- };
+    for (const collection of collections) {
+        const existingCollection = await prisma.collection.findFirst({  // Changed findUnique to findFirst
+            where: {
+                AND: [
+                    { name: collection.name }, 
+                    { userId: collection.userId }
+                ],
+            },
+        });
+    
+        if (!existingCollection) {
+            await prisma.collection.create({
+                data: collection,
+            });
+            console.log(`Collection created for ${collection.name} by user ${collection.userId}`);
+        } else {
+            console.log(`Collection already exists for ${collection.name} by user ${collection.userId}`);
+        }
+    }
+};
 
 
  const createImages = async () => {
@@ -286,8 +463,26 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
         postId: posts[0].id,
        },
     ];
-    await prisma.image.createMany( {data: images});
- };
+    for (const image of images) {
+        const existingImage = await prisma.image.findFirst({
+            where: {
+                AND: [
+                    { url: image.url },
+                    { postId: image.postId }
+                ]
+            },
+        });
+
+        if (!existingImage) {
+            await prisma.image.create({
+                data: image,
+            });
+            console.log(`Image created for post ${image.postId}`);
+        } else {
+            console.log(`Image already exists for post ${image.postId}`);
+        }
+    }
+};
 
  const createMedia = async () => {
     const posts = await prisma.post.findMany();
@@ -299,8 +494,27 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
         postId: posts[0].id,
     },
     ];
-    await prisma.media.createMany({ data: media});
- };
+    
+    for (const item of media) {
+        const existingMedia = await prisma.media.findFirst({
+            where: {
+                AND: [
+                    { url: item.url },
+                    { postId: item.postId }
+                ]
+            },
+        });
+
+        if (!existingMedia) {
+            await prisma.media.create({
+                data: item,
+            });
+            console.log(`Media created for post ${item.postId}`);
+        } else {
+            console.log(`Media already exists for post ${item.postId}`);
+        }
+    }
+};
 
 
  await createCountries();

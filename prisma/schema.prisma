@@ -19,7 +19,11 @@ model User {
   email String @unique
   password String
   profilePicUrl String
+  bio String?
+  websiteUrl String?
+  socialLinks Json? // Use Json to store social media links in a flexible way
   isAdmin Boolean @default(false)
+  
   location Location @relation(fields: [locationId], references: [id])
   locationId Int
 
@@ -68,6 +72,9 @@ model Post {
   comments Comment[]
 
   collections Collection[] @relation("PostCollections")
+
+    // Type field with 'post' or 'callout' values
+  type String
 }
 
 model Message {
