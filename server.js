@@ -81,12 +81,10 @@ app.post("/api/login", async (req,res, next) => {
 });
 
 // Get users
-app.get('/api/user', async (req, res, next) => {
+app.get('/api/users', async (req, res, next) => {
     try {
-        const user = await prisma.user.findUnique({
-            where: { id }, 
-        });
-        res.json(user);
+        const users = await prisma.user.findMany();
+        res.json(users);
     } catch (error) {
         next(error);
     }
@@ -94,7 +92,7 @@ app.get('/api/user', async (req, res, next) => {
 
 
 // GET user profile
-app.get("/api/user/:id", async (req, res, next) => {
+app.get("/api/users/:id", async (req, res, next) => {
     try {
         const user = await prisma.user.findUnique({
             where: { id: parseInt(req.params.id) },
@@ -106,7 +104,7 @@ app.get("/api/user/:id", async (req, res, next) => {
     }
 });
 
-app.get("/api/user/:id/posts", async (req, res, next) => {
+app.get("/api/users/:id/posts", async (req, res, next) => {
     const userId = parseInt(req.params.id, 10);
   
     try {
@@ -127,7 +125,7 @@ app.get("/api/user/:id/posts", async (req, res, next) => {
   });
 
 // EDIT
-app.put("/api/user/:id", authenticate, async (req, res, next) => {
+app.put("/api/users/:id", authenticate, async (req, res, next) => {
     try {
         const user = await prisma.user.update({
             where: { id: parseInt(req.params.id) },
@@ -140,7 +138,7 @@ app.put("/api/user/:id", authenticate, async (req, res, next) => {
 });
 
 // DELETE
-app.delete("/api/user/:id", authenticate, async (req, res, next) => {
+app.delete("/api/users/:id", authenticate, async (req, res, next) => {
     try {
      await prisma.user.delete({ where: { id: parseInt(req.params.id)}});
      res.json({ message: "User deleted successfully" });
@@ -604,7 +602,7 @@ app.delete("/api/unfollow/userId", authenticate, async (req, res, next) => {
 });
 
 // ----- Collection ROUTES -------
-app.get("/api/collections", authenticate, async (req, res, next) => {
+app.get("/api/collections", async (req, res, next) => {
     try {
         const userId = req.admin?.id;
 
