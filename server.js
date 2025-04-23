@@ -153,7 +153,19 @@ app.delete("/api/users/:id", authenticate, async (req, res, next) => {
 // GET ALL Posts
 app.get("/api/posts", async (req, res, next) => {
     try {
+        const { category } = req.query;
+
         const posts = await prisma.post.findMany({
+            where: category
+                ? {
+                    category: {
+                        name: {
+                            equals: category,
+                            mode:"insensitive",
+                        },
+                    },
+                } : {},
+
             include: {
                 user: true,
                 category: true,

@@ -217,7 +217,7 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
             shippingResponsibility: "GIVER",
             shippingOption: "PICKUP",
             isAvailable: true,
-            isFeatured: true,
+            isFeatured: false,
             trendingScore: 2,
             userId: users[0].id,
             categoryId: categories.find( c => c.name === "Books").id,
@@ -241,16 +241,19 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
     ];
     for (const post of posts) {
         const existingPost = await prisma.post.findFirst({
-            where: { title: post.title }
-          });
-
+          where: { title: post.title }
+        });
+      
         if (!existingPost) {
-          await prisma.post.create({
+          await prisma.post.create({ data: post });
+        } else {
+          await prisma.post.update({
+            where: { id: existingPost.id },
             data: post,
           });
         }
       }
-};
+    }
 
  const createLikes= async () => {
     const posts = await prisma.post.findMany();
