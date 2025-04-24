@@ -199,8 +199,6 @@ app.get("/api/posts", async (req, res, next) => {
             include: {
                 user: true,
                 category: true,
-                city: true,  
-                country: true, 
                 images: true,
                 media: true,
                 likes: true,
@@ -411,115 +409,6 @@ app.delete("/api/categories/:id", authenticate, async (req, res, next) => {
     }
 });
 
-
-// ----- Location ROUTES -------
-
-// ADD THIS to your server.js or routes file
-app.get("/api/locations/nearby", async (req, res, next) => {
-    try {
-      const { lat, lng } = req.query;
-      const latitude = parseFloat(lat);
-      const longitude = parseFloat(lng);
-  
-      if (isNaN(latitude) || isNaN(longitude)) {
-        return res.status(400).json({ error: "Invalid coordinates" });
-      }
-  
-      const locations = await prisma.location.findMany();
-  
-      // Find the nearest location manually (for now)
-      let nearest = null;
-      let shortestDist = Infinity;
-  
-      for (let loc of locations) {
-        const dist = Math.sqrt(
-          Math.pow(loc.latitude - latitude, 2) +
-          Math.pow(loc.longitude - longitude, 2)
-        );
-  
-        if (dist < shortestDist) {
-          shortestDist = dist;
-          nearest = loc;
-        }
-      }
-  
-      if (!nearest) return res.status(404).json({ error: "No nearby location found" });
-  
-      res.json(nearest); // Just send the nearest one
-    } catch (error) {
-      console.error("Nearby location error:", error);
-      next(error);
-    }
-  });
-  
-
-//  GET ALL
-app.get("/api/locations", async (req, res, next) => {
-    try {
-        const locations = await prisma.location.findMany({
-            include: {
-                country:  true,
-                users: true,
-                posts: true,
-            },
-        });
-
-        res.json(locations);
-    } catch (error) {
-        next(error);
-    }
-});
-//  GET SINGLE 
-app.get("/api/locations/:id", async (req, res, next) => {
-    try {
-        const locations = await prisma.location.findUnique({
-            where: { id: parseInt(req.params.id) },
-            include: {
-               country: true,
-               users: true,
-               posts: true,
-            },
-        });
-        if (!locations) return res.status(404).json({ error: "Location not found" });
-        res.json(locations);
-    } catch (error) {
-        next(error);
-    }
-});
-
-// Edit location (Admin Only)
-app.put("/api/locations/:id", authenticate, async (req, res, next) => {
-    try {
-        if (!req.admin?.isAdmin) {
-            return res.status(403).json({ error: "Forbidden: Only admins can perform this action" });
-        }
-
-       const { city, country, latitude, longitude } = req.body;
-       const updated = await prisma.location.update({
-        where: { id: parseInt(req.params.id) },
-        data: { city, country, latitude, longitude },
-       });
-       res.json(updated);
-    } catch (error) {
-        next(error);
-    }
-});
-
-// Delete location (Admin Only)
-app.delete("/api/locations/:id", authenticate, async (req, res, next) => {
-    try {
-        if (!req.admin?.isAdmin) {
-            return res.status(403).json({ error: "Forbidden: Only admins can perform this action" });
-        }
-
-        await prisma.location.delete({
-            where: { id: parseInt(req.params.id) },
-        });
-        res.json({ message: "Location deleted"});
-    } catch (error) {
-        next(error);
-    }
-});
 
 // ----- Messages ROUTES -------
 app.get("/api/messages", authenticate, async (req, res, next) => {

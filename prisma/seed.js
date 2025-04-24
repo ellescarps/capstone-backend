@@ -37,74 +37,8 @@ const createUserWithHashedPassword = async (user) => {
 
 
 
-  // TODO: Create Locations, Country, Categories, Users, Posts, Likes, Comments, Favorites, Messages, Follows, Collections, Images, Media,
+  // TODO: Create Categories, Users, Posts, Likes, Comments, Favorites, Messages, Follows, Collections, Images, Media,
 
-  const createCountries = async () => {
-    const countries = [
-        {
-            name: "Turtle Island",
-            code: "TI",
-        },
-        {
-            name: "Palestine",
-            code: "PS",
-        },
-        {
-            name: "Kanata",
-            code: "KA",
-        }, 
-    ];
-        await prisma.country.createMany( { 
-            data: countries,
-            skipDuplicates: true, 
-         });
-  };
-
-
-  const createLocations = async () => {
-    const countries = await prisma.country.findMany();
-
-     const locations = [
-        {
-            city: "New York City",
-            latitude: 40.713051,
-            longitude: -74.007233,
-            countryId: countries.find(c => c.code === "TI").id,
-        },
-        {
-            city: "Ramallah",
-            latitude: 31.9038,
-            longitude: 35.2034,
-            countryId: countries.find(c => c.code === "PS").id,
-        },
-        {
-            city: "Prince Edward Island",
-            latitude: 46.31379699707031,
-            longitude: -63.25200653076172,
-            countryId: countries.find(c => c.code === "KA").id,
-        },
-        {
-            city: "Chicago",
-            latitude: 41.8755616,
-            longitude: -87.6244212,
-            countryId: countries.find(c => c.code === "TI").id,
-        },
-     ];
-     for (const location of locations) {
-        const existingLocation = await prisma.location.findFirst({
-            where: {
-              city: location.city,
-              countryId: location.countryId, // optional but helpful if cities repeat
-            },
-          });
-    
-        if (!existingLocation) {
-          await prisma.location.create({
-            data: location,
-          });
-        }
-      }
-};
 
   const createCategory = async () => {
     const categories = [
@@ -135,8 +69,6 @@ const createUserWithHashedPassword = async (user) => {
 };
 
   const createUsers = async () => {
-    const locations = await prisma.location.findMany();  
-
     const users = [
        {
         name: "Michelle Rose",
@@ -200,8 +132,7 @@ const createUserWithHashedPassword = async (user) => {
  const createPosts = async () => {
     const users = await prisma.user.findMany();
     const categories = await prisma.category.findMany();
-    const locations = await prisma.location.findMany();
-
+    
     const posts = [
        {
         title: "Along for the Ride",
@@ -530,8 +461,6 @@ const createUserWithHashedPassword = async (user) => {
 };
 
 
- await createCountries();
- await createLocations();
  await createCategory();
  await createUsers();
  await createPosts();

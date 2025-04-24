@@ -110,22 +110,6 @@ model Media {
   postId Int
 }
 
-model Country {
-  id        Int        @id @default(autoincrement())
-  name      String     @unique
-  code      String // Optional: for ISO or custom codes
-  locations Location[]
-}
-
-model Location {
-  id        Int     @id @default(autoincrement())
-  city      String
-  country   Country @relation(fields: [countryId], references: [id])
-  countryId Int
-  latitude  Float
-  longitude Float
-}
-
 model Favorite {
   id     Int  @id @default(autoincrement())
   user   User @relation(fields: [userId], references: [id])
