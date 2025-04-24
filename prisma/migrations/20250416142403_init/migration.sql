@@ -2,7 +2,7 @@
 CREATE TYPE "ShippingResponsibility" AS ENUM ('GIVER', 'RECEIVER', 'SHARED');
 
 -- CreateEnum
-CREATE TYPE "ShippingOption" AS ENUM ('PICKUP', 'SHIPPING', 'BOTH');
+CREATE TYPE "ShippingOption" AS ENUM ('PICKUP', 'SHIPPING', 'DROPOFF');
 
 -- CreateTable
 CREATE TABLE "User" (

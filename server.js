@@ -15,7 +15,7 @@ const prisma = require("./prisma");
 const { category } = require("./prisma");
 
 app.use(cors({ origin: /localhost/ }));
-app.use(express.json())
+app.use(express.json());
 app.use(require("morgan")("dev"));
 
 
@@ -39,44 +39,74 @@ function authenticate(req, res, next) {
 // Register a new user
 app.post("/api/register", async (req, res, next) => {
     try {
-    const { name, email, password, isAdmin, locationId, shippingResponsibility, shippingOption, profilePicUrl } = req.body;
-    const hashedPassword = await bcrypt.hash(password, 10);
+        const { name, email, password, city, country, shippingResponsibility, shippingOption, profilePicUrl } = req.body;
 
-    const user = await prisma.user.create({
-        data: {
-            name,
-            email,
-            password: hashedPassword,
-            isAdmin,
-            locationId,
-            shippingResponsibility,
-            shippingOption,
-            profilePicUrl,
-        },
-    });
-     res.json(user);  
+        
+        if (!name || !email || !password ) {
+            return res.status(400).json({ message: "Name, email, and password are required." });
+        }
+
+      
+        const existingUser = await prisma.user.findUnique({
+            where: { email },
+        });
+        if (existingUser) {
+            return res.status(400).json({ message: "Email is already registered." });
+        }
+
+       
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+       
+        const user = await prisma.user.create({
+            data: {
+                name,
+                email,
+                password: hashedPassword,
+                isAdmin: false, 
+                city,
+                country,
+                shippingOption: shippingOption || null,
+                shippingResponsibility: shippingResponsibility || null,
+                profilePicUrl,
+            },
+        });
+
+       
+        const token = jwt.sign(
+            { userId: user.id, email: user.email, isAdmin: user.isAdmin }, 
+            process.env.JWT_SECRET, 
+            { expiresIn: '1h' }
+        );
+
+        // Send back the token and user data
+        res.json({ token, user });
+
     } catch (error) {
         next(error);
     }
 });
 
-
 // Login a user
 
 app.post("/api/login", async (req,res, next) => {
-      try {
-        const { email, password } = req.body;
+    console.log(req.body); 
+    const { email, password } = req.body;
+    if (!email || !password) {
+        return res.status(400).json({ error: "Email and password are required" });
+    }
 
-        const user = await prisma.user.findUnique({ where: {email}});
-        if (!user) return res.status(400).json({ error: "Invalid email"})
+    try {
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (!user) return res.status(400).json({ error: "Invalid email" });
 
         const match = await bcrypt.compare(password, user.password);
         if (!match) return res.status(400).json({ error: "Invalid password" });
 
-        const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "1h"});
+        const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "1h" });
         res.json({ token });
     } catch (error) {
-        next(error);
+        res.status(500).json({ error: "Server error" });
     }
 });
 
@@ -169,12 +199,14 @@ app.get("/api/posts", async (req, res, next) => {
             include: {
                 user: true,
                 category: true,
-                location: true,
+                city: true,  
+                country: true, 
                 images: true,
                 media: true,
                 likes: true,
                 favorites: true,
                 comments: true,
+                collections: true,
             },
         });
         res.json(posts);
@@ -191,7 +223,8 @@ app.get("/api/posts/:id", async (req, res, next) => {
         include: {
             user: true,
             category: true,
-            location: true,
+            city: true,  
+            country: true, 
             images: true,
             media: true,
             likes: true,
@@ -216,7 +249,8 @@ app.post("/api/posts", authenticate, async (req, res, next) => {
             shippingOption,
             isFeatured,
             categoryId,
-            locationId,
+            city,
+            country,
             type,} = req.body;
 
             if (type !== 'post' && type !== 'callout') {
@@ -235,8 +269,9 @@ app.post("/api/posts", authenticate, async (req, res, next) => {
                 type,
                 userId: req.admin.id,
                 categoryId,
-                locationId,
-            }
+                city,
+                country,
+            },
         });
 
           // Based on the type, you could perform different logic here
@@ -264,7 +299,8 @@ app.put("/api/posts/:id", async (req, res, next) => {
             shippingOption,
             isFeatured,
             categoryId,
-            locationId,
+            city,
+            country,
         } = req.body;
         
         const post = await prisma.post.update({
@@ -278,7 +314,8 @@ app.put("/api/posts/:id", async (req, res, next) => {
                 shippingOption,
                 isFeatured,
                 categoryId,
-                locationId,
+                city,
+                country,
             },
         });
         res.json(post);
@@ -377,6 +414,45 @@ app.delete("/api/categories/:id", authenticate, async (req, res, next) => {
 
 // ----- Location ROUTES -------
 
+// ADD THIS to your server.js or routes file
+app.get("/api/locations/nearby", async (req, res, next) => {
+    try {
+      const { lat, lng } = req.query;
+      const latitude = parseFloat(lat);
+      const longitude = parseFloat(lng);
+  
+      if (isNaN(latitude) || isNaN(longitude)) {
+        return res.status(400).json({ error: "Invalid coordinates" });
+      }
+  
+      const locations = await prisma.location.findMany();
+  
+      // Find the nearest location manually (for now)
+      let nearest = null;
+      let shortestDist = Infinity;
+  
+      for (let loc of locations) {
+        const dist = Math.sqrt(
+          Math.pow(loc.latitude - latitude, 2) +
+          Math.pow(loc.longitude - longitude, 2)
+        );
+  
+        if (dist < shortestDist) {
+          shortestDist = dist;
+          nearest = loc;
+        }
+      }
+  
+      if (!nearest) return res.status(404).json({ error: "No nearby location found" });
+  
+      res.json(nearest); // Just send the nearest one
+    } catch (error) {
+      console.error("Nearby location error:", error);
+      next(error);
+    }
+  });
+  
+
 //  GET ALL
 app.get("/api/locations", async (req, res, next) => {
     try {
@@ -418,10 +494,10 @@ app.put("/api/locations/:id", authenticate, async (req, res, next) => {
             return res.status(403).json({ error: "Forbidden: Only admins can perform this action" });
         }
 
-       const { city, countryId, latitude, longitude } = req.body;
+       const { city, country, latitude, longitude } = req.body;
        const updated = await prisma.location.update({
         where: { id: parseInt(req.params.id) },
-        data: { city, countryId, latitude, longitude },
+        data: { city, country, latitude, longitude },
        });
        res.json(updated);
     } catch (error) {
@@ -430,7 +506,7 @@ app.put("/api/locations/:id", authenticate, async (req, res, next) => {
 });
 
 // Delete location (Admin Only)
-app.delete("/api/location/:id", authenticate, async (req, res, next) => {
+app.delete("/api/locations/:id", authenticate, async (req, res, next) => {
     try {
         if (!req.admin?.isAdmin) {
             return res.status(403).json({ error: "Forbidden: Only admins can perform this action" });

@@ -5,29 +5,34 @@ const prisma = require("../prisma");
 
 const seed = async () => {
 
-const createUserWithHashedPassword = async (name, email, password, isAdmin, locationId, shippingResponsibility, shippingOption, profilePicUrl) => {
+const createUserWithHashedPassword = async (user) => {
+   try {
     const existingUser = await prisma.user.findUnique({
-        where: { email }
+        where: { email: user.email }
     });
     
     if (!existingUser) {
-        const hashedPassword = await bcrypt.hash(password, saltRounds);
+        const hashedPassword = await bcrypt.hash(user.password, saltRounds);
 
     await prisma.user.create({
         data: {
-            name,
-            email,
+            name: user.name,
+            email: user.email,
             password: hashedPassword,
-            isAdmin,
-            locationId,
-            shippingResponsibility,
-            shippingOption,
-            profilePicUrl,
+            isAdmin: user.isAdmin,
+            city: user.city,
+            country: user.country,
+            shippingOption: null,  
+            shippingResponsibility: null,
+            profilePicUrl: user.profilePicUrl,
           },
     });
 } else {
-    console.log(`User with email ${email} already exists.`);
+    console.log(`User with email ${user.email} already exists.`);
 }
+   } catch (error) {
+    console.error('Error creating user:', error);
+   }
 };
 
 
@@ -139,9 +144,10 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
         password: "lincoln123",
         profilePicUrl: "https://static.wikia.nocookie.net/courage/images/4/46/New_Courage.png/revision/latest?cb=20200912151506",
         isAdmin: true,
-        locationId: locations.find(l => l.city === "New York City").id,
+        city: "New York City",
+        country: "USA",
+        shippingOption: "DROPOFF",
         shippingResponsibility: "SHARED",
-        shippingOption: "BOTH",
         bio: "Mutual Aid and Community Activist",
         websiteUrl: "https://michelle-rose.dev",
         socialLinks: {
@@ -156,9 +162,10 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
         password: "lincoln123",
         profilePicUrl: "https://static.vecteezy.com/system/resources/thumbnails/008/006/949/small_2x/the-moon-and-deep-space-photo.jpg",
         isAdmin: false,
-        locationId: locations.find(l => l.city === "New York City").id,
-        shippingResponsibility: "GIVER",
+        city: "Chicago",
+        country: "USA",
         shippingOption: "SHIPPING",
+        shippingResponsibility: "GIVER",
         bio: "Moonchild sharing love & light",
         website: "https://lunab.dev",
         socialLinks: {
@@ -169,7 +176,7 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
     ];
    // Use the helper function for creating users with hashed passwords
    for (const user of users) {
-    await createUserWithHashedPassword(user.name, user.email, user.password, user.isAdmin, user.locationId, user.shippingResponsibility, user.shippingOption, user.profilePicUrl);
+    await createUserWithHashedPassword(user);
 }
  };
 
@@ -207,7 +214,8 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
         trendingScore: 25,
         userId: users[0].id,
         categoryId: categories.find( c => c.name === "Books").id,
-        locationId: locations.find(l => l.city === "New York City").id,
+        city: "New York City",
+        country: "USA",
         type: "post",
         },
         {
@@ -221,7 +229,8 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
             trendingScore: 2,
             userId: users[0].id,
             categoryId: categories.find( c => c.name === "Books").id,
-            locationId: locations.find(l => l.city === "New York City").id,
+            city: "New York City",
+            country: "USA",
             type: "callout",
         },
         {
@@ -229,13 +238,14 @@ const createUserWithHashedPassword = async (name, email, password, isAdmin, loca
             description: "Book by Omar El Akkad",
             shippingCost: 5.00,
             shippingResponsibility: "SHARED",
-            shippingOption: "BOTH",
+            shippingOption: "PICKUP",
             isAvailable: true,
             isFeatured: true,
             trendingScore: 25,
             userId: users[0].id,
             categoryId: categories.find( c => c.name === "Books").id,
-            locationId: locations.find(l => l.city === "New York City").id,
+            city: "New York City",
+            country: "USA",
             type: "post",
         },
     ];
