@@ -405,7 +405,7 @@ app.delete("/api/categories/:id", authenticate, async (req, res, next) => {
         await prisma.category.delete({
             where: { id: parseInt(req.params.id) },
         });
-        res.json({ message: "Cateogry deletd" });
+        res.json({ message: "Category deleted" });
     } catch (error) {
         next(error);
     }
