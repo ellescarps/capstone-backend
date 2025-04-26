@@ -17,9 +17,10 @@ datasource db {
 model User {
   id            Int     @id @default(autoincrement())
   name          String
+  username      String  @unique
   email         String  @unique
   password      String
-  profilePicUrl String
+  profilePicUrl String?
   bio           String?
   websiteUrl    String?
   socialLinks   Json? // Use Json to store social media links in a flexible way

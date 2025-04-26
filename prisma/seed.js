@@ -16,6 +16,7 @@ const createUserWithHashedPassword = async (user) => {
 
     await prisma.user.create({
         data: {
+            username: user.username,
             name: user.name,
             email: user.email,
             password: hashedPassword,
@@ -71,15 +72,12 @@ const createUserWithHashedPassword = async (user) => {
   const createUsers = async () => {
     const users = [
        {
+        id: 1,
         name: "Michelle Rose",
+        username: "michellerose",
         email: "elle.scarps@gmail.com",
         password: "lincoln123",
-        profilePicUrl: "https://static.wikia.nocookie.net/courage/images/4/46/New_Courage.png/revision/latest?cb=20200912151506",
-        isAdmin: true,
-        city: "New York City",
-        country: "USA",
-        shippingOption: "DROPOFF",
-        shippingResponsibility: "SHARED",
+        profilePicUrl: "https://tomkingskennel.com/wp-content/uploads/2022/08/arlene-tomkings-puppies-3.jpg",
         bio: "Mutual Aid and Community Activist",
         websiteUrl: "https://michelle-rose.dev",
         socialLinks: {
@@ -87,30 +85,61 @@ const createUserWithHashedPassword = async (user) => {
          twitter: "https://twitter.com/michellecodes",
          linkedin: "https://linkedin.com/in/michellerose",
          },
+        isAdmin: true,
+        city: "New York City",
+        country: "USA",
+        shippingOption: "PICKUP", 
+        shippingResponsibility: "SHARED",
+        posts: [],
+        comments: [],
+        collections: [],
+        messageSent: [],
+        messageReceived: [],
+        likes: [],
+        follows: [],
+        followers: [],
+        favorites: []
        },
        {
+        id: 2,
         name: "Luna B",
+        username: "lunabear03",
         email: "tweetsmiles@gmail.com",
         password: "lincoln123",
         profilePicUrl: "https://static.vecteezy.com/system/resources/thumbnails/008/006/949/small_2x/the-moon-and-deep-space-photo.jpg",
+        bio: "Moonchild sharing love & light",
+        websiteUrl: "https://lunab.dev",
+        socialLinks: {
+        instagram: "https://instagram.com/lunab",
+        tiktok: "https://tiktok.com/@lunab",
+        },
         isAdmin: false,
         city: "Chicago",
         country: "USA",
-        shippingOption: "SHIPPING",
-        shippingResponsibility: "GIVER",
-        bio: "Moonchild sharing love & light",
-        website: "https://lunab.dev",
-        socialLinks: {
-         instagram: "https://instagram.com/lunab",
-         tiktok: "https://tiktok.com/@lunab",
-            },
+        shippingOption: "PICKUP", 
+        shippingResponsibility: "SHARED",
+        posts: [],
+        comments: [],
+        collections: [],
+        messageSent: [],
+        messageReceived: [],
+        likes: [],
+        follows: [],
+        followers: [],
+        favorites: []
         },
     ];
-   // Use the helper function for creating users with hashed passwords
-   for (const user of users) {
+// Use the helper function for creating users with hashed passwords
+for (const user of users) {
     await createUserWithHashedPassword(user);
 }
  };
+ 
+ createUsers().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+
 
  const updateUser = async (userId, updatedData) => {
     const user = await prisma.user.findUnique({

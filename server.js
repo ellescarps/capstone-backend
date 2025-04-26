@@ -27,7 +27,7 @@ function authenticate(req, res, next) {
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.admin = decoded;
+    req.user = decoded;
     next();
   } catch (err) {
     res.status(403).json({ error: 'Invalid token' });
@@ -36,51 +36,74 @@ function authenticate(req, res, next) {
 
 // ----- User ROUTES -------
 
-// Register a new user
-app.post("/api/register", async (req, res, next) => {
+// Step 1: Register basic user info (name, email, password)
+app.post("/api/register-step1", async (req, res, next) => {
     try {
-        const { name, email, password, city, country, shippingResponsibility, shippingOption, profilePicUrl } = req.body;
+        const { username, name, email, password } = req.body;
 
-        
-        if (!name || !email || !password ) {
-            return res.status(400).json({ message: "Name, email, and password are required." });
+        if (!username || !name || !email || !password) {
+            return res.status(400).json({ message: "Username, name, email, and password are required." });
         }
 
-      
-        const existingUser = await prisma.user.findUnique({
-            where: { email },
-        });
-        if (existingUser) {
+        const existingUserByEmail = await prisma.user.findUnique({ where: { email } });
+        const existingUserByUsername = await prisma.user.findUnique({ where: { username } });
+
+        if (existingUserByEmail) {
             return res.status(400).json({ message: "Email is already registered." });
         }
 
-       
-        const hashedPassword = await bcrypt.hash(password, 10);
+        if (existingUserByUsername) {
+            return res.status(400).json({ message: "Username is already taken." });
+        }
 
-       
+        const hashedPassword = await bcrypt.hash(password, 10);
         const user = await prisma.user.create({
-            data: {
-                name,
-                email,
-                password: hashedPassword,
-                isAdmin: false, 
-                city,
-                country,
-                shippingOption: shippingOption || null,
-                shippingResponsibility: shippingResponsibility || null,
-                profilePicUrl,
+            data: { 
+                username,
+                name, 
+                email, 
+                password: hashedPassword, 
+                isAdmin: false,
+                profilePicUrl: "https://images.unsplash.com/photo-1584974292709-5c2f0619971b?q=80&w=1740&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
             },
         });
 
-       
-        const token = jwt.sign(
-            { userId: user.id, email: user.email, isAdmin: user.isAdmin }, 
-            process.env.JWT_SECRET, 
-            { expiresIn: '1h' }
-        );
+        res.json({ 
+            message: "Step 1 completed. Please proceed to Step 2.",
+            userId: user.id,
+        });
+        
+    } catch (error) {
+        next(error);
+    }
+});
 
-        // Send back the token and user data
-        res.json({ token, user });
+// Step 2: Complete the registration process with additional fields (city, country, etc.)
+app.post("/api/register-step2", async (req, res, next) => {
+    try {
+        const { userId, city, country, shippingResponsibility, shippingOption, profilePicUrl } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ message: "User ID is required to update profile." });
+        }
+
+        const validShippingOptions = ["PICKUP", "SHIPPING", "DROPOFF"];
+        const validOption = validShippingOptions.includes(shippingOption) ? shippingOption : "PICKUP"; 
+
+        const validShippingResponsibilities = ["GIVER", "RECEIVER", "SHARED"];
+        const validResponsibility = validShippingResponsibilities.includes(shippingResponsibility) ? shippingResponsibility : "RECEIVER";  
+
+        const user = await prisma.user.update({
+            where: { id: userId },
+            data: { 
+                city, 
+                country, 
+                shippingOption: validOption,
+                shippingResponsibility: validResponsibility, 
+                profilePicUrl },
+        });
+
+        res.json({ message: "Registration complete.", user });
 
     } catch (error) {
         next(error);
@@ -110,6 +133,8 @@ app.post("/api/login", async (req,res, next) => {
     }
 });
 
+
+
 // Get users
 app.get('/api/users', async (req, res, next) => {
     try {
@@ -120,60 +145,62 @@ app.get('/api/users', async (req, res, next) => {
     }
 });
 
-
 // GET user profile
 app.get("/api/users/:id", async (req, res, next) => {
     try {
+        // Validate that the id is a valid integer
+        const userId = parseInt(req.params.id, 10);
+        if (isNaN(userId)) {
+            return res.status(400).json({ error: "Invalid user ID" });
+        }
+
         const user = await prisma.user.findUnique({
-            where: { id: parseInt(req.params.id) },
+            where: { id: userId },
         });
-        if (!user) return res.status(404).json({ error: "User not found" });
+        if (!user) {
+            return res.status(404).json({ error: `User with ID ${userId} not found` });
+        }
+
         res.json(user);
     } catch (error) {
+        console.error("Error fetching user data:", error); 
         next(error);
     }
 });
 
-app.get("/api/users/:id/posts", async (req, res, next) => {
-    const userId = parseInt(req.params.id, 10);
-  
-    try {
-      const posts = await prisma.post.findMany({
-        where: { userId: userId },
-        include: {
-          images: true,
-          likes: true,
-          favorites: true,
-          comments: true,
-        },
-      });
-  
-      res.json(posts);
-    } catch (error) {
-        next(error);
+app.put('/api/users/:id', authenticate, async (req, res) => {
+    const userId = req.params.id;
+    
+    // Ensure that the logged-in user is trying to update their own profile
+    if (parseInt(userId) !== req.user.id) {
+        return res.status(403).json({ error: "You can only update your own profile" });
     }
-  });
 
-// EDIT
-app.put("/api/users/:id", authenticate, async (req, res, next) => {
     try {
-        const user = await prisma.user.update({
-            where: { id: parseInt(req.params.id) },
-            data: req.body,
+        const updatedUser = await prisma.user.update({
+            where: { id: parseInt(userId) },
+            data: req.body, // We expect the body to contain updated fields
         });
-        res.json(user);
+        res.json(updatedUser);
     } catch (error) {
-        next(error);
+        res.status(500).json({ error: "Server error" });
     }
 });
 
-// DELETE
-app.delete("/api/users/:id", authenticate, async (req, res, next) => {
+
+app.delete("/api/users/:id", authenticate, async (req, res) => {
+    const userId = req.params.id;
+    
+    // Ensure that the logged-in user is trying to delete their own account
+    if (parseInt(userId) !== req.user.id) {
+        return res.status(403).json({ error: "You can only delete your own profile" });
+    }
+
     try {
-     await prisma.user.delete({ where: { id: parseInt(req.params.id)}});
-     res.json({ message: "User deleted successfully" });
+        await prisma.user.delete({ where: { id: parseInt(userId) } });
+        res.json({ message: "User deleted successfully" });
     } catch (error) {
-      next(error);
+        res.status(500).json({ error: "Server error" });
     }
 });
 
@@ -221,8 +248,6 @@ app.get("/api/posts/:id", async (req, res, next) => {
         include: {
             user: true,
             category: true,
-            city: true,  
-            country: true, 
             images: true,
             media: true,
             likes: true,
@@ -235,6 +260,40 @@ app.get("/api/posts/:id", async (req, res, next) => {
         next(error);
     }
 });
+
+
+// Get posts or callouts by a specific user
+app.get('/api/posts/users/:id', async (req, res, next) => {
+    const { id } = req.params; 
+    const { type } = req.query;  // Default to 'post' if no type is provided
+
+    const userId = parseInt(id);
+    if (isNaN(userId)) {
+        return res.status(400).json({ error: "Invalid user ID" });
+    }
+
+    try {
+        const posts = await prisma.post.findMany({
+            where: {
+                userId: userId,
+                type: type,  // Ensure the type filter is applied
+            },
+        });
+
+        if (posts.length === 0) {
+            console.log("No posts found for this user with type:", type);
+        }
+
+        res.json(posts);
+    } catch (error) {
+        console.error("Error fetching posts:", error);  // Log the error for debugging
+        res.status(500).json({ error: "Error fetching posts" });
+        next(error);
+    }
+});
+
+
+
 
 // CREATE a new post
 app.post("/api/posts", authenticate, async (req, res, next) => {
@@ -265,10 +324,13 @@ app.post("/api/posts", authenticate, async (req, res, next) => {
                 shippingOption,
                 isFeatured,
                 type,
-                userId: req.admin.id,
+                userId: req.user.id,
                 categoryId,
                 city,
                 country,
+            },
+            include: {
+                category: true,
             },
         });
 
@@ -314,6 +376,9 @@ app.put("/api/posts/:id", async (req, res, next) => {
                 categoryId,
                 city,
                 country,
+            }, 
+            include: {
+                category: true,
             },
         });
         res.json(post);
@@ -323,7 +388,7 @@ app.put("/api/posts/:id", async (req, res, next) => {
 });
 
 // DELETE
-app.delete("/api/delete/:id", authenticate, async (req, res, next) => {
+app.delete("/api/posts/:id", authenticate, async (req, res, next) => {
     try {
         await prisma.post.delete({
             where: { id: parseInt(req.params.id) },
@@ -379,7 +444,7 @@ app.post("/api/categories", authenticate, async (req, res, next) => {
 // EDIT Category (Admin Only)
 app.put("/api/categories/:id", authenticate, async (req, res, next) => {
     try {
-        if (!req.admin?.isAdmin) {
+        if (!req.user?.isAdmin) {
             return res.status(403).json({ error: "Forbidden: Only admins can perform this action" });
         }
 
@@ -396,14 +461,14 @@ app.put("/api/categories/:id", authenticate, async (req, res, next) => {
 // DELETE Category (Admin Only)
 app.delete("/api/categories/:id", authenticate, async (req, res, next) => {
     try {
-        if (!req.admin?.isAdmin) {
+        if (!req.user?.isAdmin) {
             return res.status(403).json({ error: "Forbidden: Only admins can perform this action" });
         }
 
         await prisma.category.delete({
             where: { id: parseInt(req.params.id) },
         });
-        res.json({ message: "Category deleted" });
+        res.status(204).send(); 
     } catch (error) {
         next(error);
     }
@@ -413,7 +478,7 @@ app.delete("/api/categories/:id", authenticate, async (req, res, next) => {
 // ----- Messages ROUTES -------
 app.get("/api/messages", authenticate, async (req, res, next) => {
     try {
-        const userId = req.admin?.id;
+        const userId = req.user?.id;
         const messages = await prisma.message.findMany({
             where: {
                 OR: [
@@ -445,7 +510,7 @@ app.get("/api/messages/:id", authenticate, async (req, res, next) => {
             },
         });
 
-        const userId = req.admin?.id;
+        const userId = req.user?.id;
         if (
             !message ||
             (message.senderId !== userId && message.receiverId !== userId)
@@ -460,7 +525,7 @@ app.get("/api/messages/:id", authenticate, async (req, res, next) => {
 
 app.post("/api/messages", authenticate, async (req, res, next) => {
     try {
-        const senderId = req.admin?.id;
+        const senderId = req.user?.id;
         const { receiverId, content } = req.body;
 
         const newMessage = await prisma.message.create({
@@ -478,7 +543,7 @@ app.post("/api/messages", authenticate, async (req, res, next) => {
 
 app.delete("/api/messages/:id", authenticate, async (req, res, next) => {
     try {
-        const userId = req.admin?.id;
+        const userId = req.user?.id;
         const message = await prisma.message.findUnique({
             where: { id: parseInt(req.params.id) },
         });
@@ -503,16 +568,16 @@ app.delete("/api/messages/:id", authenticate, async (req, res, next) => {
 // ----- Follow ROUTES -------
 app.get("/api/following", authenticate, async (req, res, next) => {
     try {
-        const userId = req.admin?.id;
+        const userId = req.user.id;
 
-        const following = await prisma.follow.findMany({
+        const followingList = await prisma.follow.findMany({
             where: { followerId: userId},
             include: {
                 following: true,
             },
         });
 
-        res.json(following.map(f => f.following));
+        res.json(followingList.map(f => f.following));
     } catch (error) {
         next(error);
     }
@@ -520,7 +585,7 @@ app.get("/api/following", authenticate, async (req, res, next) => {
 
 app.get("/api/followers", authenticate, async (req, res, next) => {
     try {
-        const userId = req.admin?.id;
+        const userId = req.user?.id;
         
         const followers = await prisma.follow.findMany({
             where: { followingId: userId },
@@ -538,7 +603,7 @@ app.get("/api/followers", authenticate, async (req, res, next) => {
 
 app.post("/api/follow/:userId", authenticate, async (req, res, next) => {
     try {
-        const followerId = req.admin?.id;
+        const followerId = req.user?.id;
         const followingId = parseInt(req.params.userId);
         
         if (followerId === followingId) {
@@ -560,7 +625,7 @@ app.post("/api/follow/:userId", authenticate, async (req, res, next) => {
 
 app.delete("/api/unfollow/userId", authenticate, async (req, res, next) => {
     try {
-        const followerId = req.admin?.id;
+        const followerId = req.user?.id;
         const followingId = parseInt(req.params.userId);
 
         await prisma.follow.delete({
@@ -581,10 +646,10 @@ app.delete("/api/unfollow/userId", authenticate, async (req, res, next) => {
 // ----- Collection ROUTES -------
 app.get("/api/collections", async (req, res, next) => {
     try {
-        const userId = req.admin?.id;
+        const id = req.user?.id;
 
         const collections = await prisma.collection.findMany({
-            where: { userId },
+            where: { userId: parseInt(id)},
             include: {
                 posts: true,
             },
@@ -596,9 +661,28 @@ app.get("/api/collections", async (req, res, next) => {
     }
 });
 
+// Get collections by a specific user
+app.get("/api/collections/users/:id", async (req, res, next) => {
+    const { id } = req.params; // Get user ID from the URL
+
+    try {
+        const collections = await prisma.collection.findMany({
+            where: { userId: parseInt(id) },  // Ensure the user ID is passed correctly
+        });
+        if (collections.length === 0) {
+            return res.status(200).json([]);  // Ensure an empty array is returned
+        }
+
+        res.json(collections);
+    } catch (error) {
+        res.status(500).json({ error: "Error fetching collections" });
+        next();
+    }
+});
+
 app.post("/api/collections", authenticate, async (req, res, next) => {
     try {
-        const userId = req.admin?.id;
+        const userId = req.user?.id;
         const { name } = req.body;
 
         const collection = await prisma.collection.create({
