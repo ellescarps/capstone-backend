@@ -4,9 +4,8 @@ const jwt = require("jsonwebtoken");
 const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
+const shippo = require("shippo");
 
-
-const JWT_SECRET = process.env.JWT_SECRET
 
 const app = express();
 const PORT = 3000;
@@ -18,6 +17,7 @@ app.use(cors({ origin: /localhost/ }));
 app.use(express.json());
 app.use(require("morgan")("dev"));
 
+const JWT_SECRET = process.env.JWT_SECRET
 
 
 function authenticate(req, res, next) {
@@ -103,7 +103,9 @@ app.post("/api/register-step2", async (req, res, next) => {
                 profilePicUrl },
         });
 
-        res.json({ message: "Registration complete.", user });
+        const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "1h" });
+
+        res.json({ message: "Registration complete.", token, user });
 
     } catch (error) {
         next(error);
@@ -179,7 +181,7 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
     try {
         const updatedUser = await prisma.user.update({
             where: { id: parseInt(userId) },
-            data: req.body, // We expect the body to contain updated fields
+            data: req.body, 
         });
         res.json(updatedUser);
     } catch (error) {
@@ -213,16 +215,16 @@ app.get("/api/posts", async (req, res, next) => {
         const { category } = req.query;
 
         const posts = await prisma.post.findMany({
-            where: category
-                ? {
+            where: {
+                ...(category ? {
                     category: {
                         name: {
                             equals: category,
-                            mode:"insensitive",
+                            mode: "insensitive",
                         },
                     },
-                } : {},
-
+                } : {}),
+            },
             include: {
                 user: true,
                 category: true,
@@ -263,7 +265,7 @@ app.get("/api/posts/:id", async (req, res, next) => {
 
 
 // Get posts or callouts by a specific user
-app.get('/api/posts/users/:id', async (req, res, next) => {
+app.get('/api/posts/users/:id', authenticate, async (req, res, next) => {
     const { id } = req.params; 
     const { type } = req.query;  // Default to 'post' if no type is provided
 
@@ -276,7 +278,7 @@ app.get('/api/posts/users/:id', async (req, res, next) => {
         const posts = await prisma.post.findMany({
             where: {
                 userId: userId,
-                type: type,  // Ensure the type filter is applied
+                type: type,  
             },
         });
 
@@ -286,7 +288,7 @@ app.get('/api/posts/users/:id', async (req, res, next) => {
 
         res.json(posts);
     } catch (error) {
-        console.error("Error fetching posts:", error);  // Log the error for debugging
+        console.error("Error fetching posts:", error); 
         res.status(500).json({ error: "Error fetching posts" });
         next(error);
     }
@@ -334,12 +336,12 @@ app.post("/api/posts", authenticate, async (req, res, next) => {
             },
         });
 
-          // Based on the type, you could perform different logic here
-    if (newPost.type === 'post') {
-        // Handle posts differently, e.g., add to giveaway section
-      } else if (newPost.type === 'callout') {
-        // Handle callouts differently, e.g., add to request section
-      }
+
+        if (newPost.type === 'post') {
+            console.log('New post created:', newPost);
+        } else if (newPost.type === 'callout') {
+            console.log('New callout created:', newPost);
+        }
 
         res.json(newPost);
     } catch (error) {
@@ -348,7 +350,7 @@ app.post("/api/posts", authenticate, async (req, res, next) => {
 });
 
 // EDIT
-app.put("/api/posts/:id", async (req, res, next) => {
+app.put("/api/posts/:id", authenticate, async (req, res, next) => {
     try {
         const {
             title,
@@ -533,8 +535,10 @@ app.post("/api/messages", authenticate, async (req, res, next) => {
                 content,
                 senderId,
                 receiverId,
+                createdAt: new Date(),
             },
         });
+        await newMessage.save();
         res.json(newMessage);
     } catch (error) {
         next(error);
@@ -644,7 +648,7 @@ app.delete("/api/unfollow/userId", authenticate, async (req, res, next) => {
 });
 
 // ----- Collection ROUTES -------
-app.get("/api/collections", async (req, res, next) => {
+app.get("/api/collections", authenticate, async (req, res, next) => {
     try {
         const id = req.user?.id;
 
@@ -662,15 +666,15 @@ app.get("/api/collections", async (req, res, next) => {
 });
 
 // Get collections by a specific user
-app.get("/api/collections/users/:id", async (req, res, next) => {
-    const { id } = req.params; // Get user ID from the URL
+app.get("/api/collections/users/:id", authenticate, async (req, res, next) => {
+    const { id } = req.params; 
 
     try {
         const collections = await prisma.collection.findMany({
-            where: { userId: parseInt(id) },  // Ensure the user ID is passed correctly
+            where: { userId: parseInt(id) },  
         });
         if (collections.length === 0) {
-            return res.status(200).json([]);  // Ensure an empty array is returned
+            return res.status(200).json([]);  
         }
 
         res.json(collections);
@@ -876,6 +880,46 @@ app.delete("/api/media/:id", authenticate, async (req, res, next) => {
         next(error);
     }
 });
+
+
+// Initialize Shippo client properly
+const shippoClient = new shippo.Shippo(process.env.SHIPPO_API_KEY);  // Use 'new' keyword
+
+// Function to get shipping rates from Shippo
+const getShippingCost = async (fromZip, toZip, weight) => {
+  try {
+    const shipment = await shippoClient.shipment.create({
+      address_from: { zip: fromZip },
+      address_to: { zip: toZip },
+      parcels: [{ weight: weight }],
+    });
+
+    if (shipment && shipment.rates) {
+      return shipment.rates;  // Return rates if available
+    } else {
+      return null;  // No rates found
+    }
+  } catch (error) {
+    console.error("Error fetching shipping rates:", error);
+    throw new Error("Failed to fetch shipping rates");
+  }
+};
+
+// Example Express.js route
+app.get('/api/shipping-rates', (req, res) => {
+    const { fromZip, toZip, weight } = req.query;
+
+    // Here, you would calculate the shipping cost based on the parameters
+    // For now, returning a mock value
+    if (!fromZip || !toZip || !weight) {
+        return res.status(400).json({ error: 'Missing required query parameters.' });
+    }
+
+    const shippingCost = 10; // Example fixed cost, replace with your calculation logic
+    res.json([{ amount: shippingCost }]);  // Returning mock data
+});
+
+
 
 
 
