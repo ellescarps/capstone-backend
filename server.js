@@ -1,11 +1,12 @@
 require("dotenv").config();
-const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
 const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
-const shippo = require("shippo");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 
+const shippo = require("shippo");
+const fileUpload = require('express-fileupload');
 
 const app = express();
 const PORT = 3000;
@@ -16,23 +17,38 @@ const { category } = require("./prisma");
 app.use(cors({ origin: /localhost/ }));
 app.use(express.json());
 app.use(require("morgan")("dev"));
+// Add this with your other middleware
+app.use(fileUpload({
+    useTempFiles: false,
+    limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+  }));
+  
 
-const JWT_SECRET = process.env.JWT_SECRET
+const JWT_SECRET = process.env.JWT_SECRET || "secretcoven";
 
 
 function authenticate(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: 'Missing token' });
-
-  const token = authHeader.split(' ')[1];
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (err) {
-    res.status(403).json({ error: 'Invalid token' });
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'Missing token' });
+  
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      req.user = decoded;
+      next();
+    } catch (err) {
+      res.status(403).json({ error: 'Invalid token' });
+    }
   }
-}
+  
+  // Add the validate-token endpoint
+  app.get('/api/validate-token', authenticate, (req, res) => {
+      // If middleware passes, token is valid
+      res.status(200).json({ 
+          valid: true,
+          user: req.user 
+      });
+  });
 
 // ----- User ROUTES -------
 
@@ -113,27 +129,46 @@ app.post("/api/register-step2", async (req, res, next) => {
 });
 
 // Login a user
-
-app.post("/api/login", async (req,res, next) => {
-    console.log(req.body); 
-    const { email, password } = req.body;
-    if (!email || !password) {
-        return res.status(400).json({ error: "Email and password are required" });
-    }
-
+app.post("/api/login", async (req, res) => {
     try {
-        const user = await prisma.user.findUnique({ where: { email } });
-        if (!user) return res.status(400).json({ error: "Invalid email" });
-
-        const match = await bcrypt.compare(password, user.password);
-        if (!match) return res.status(400).json({ error: "Invalid password" });
-
-        const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "1h" });
-        res.json({ token });
+      const { email, password } = req.body;
+      const user = await prisma.user.findUnique({ 
+        where: { email },
+        select: {
+          id: true,
+          password: true,
+          username: true,
+          email: true,
+          name: true,
+          profilePicUrl: true,
+          bio: true,
+          city: true,
+          country: true,
+          shippingOption: true,
+          shippingResponsibility: true
+        }
+      });
+      
+      if (!user) return res.status(400).json({ error: "Invalid credentials" });
+      
+      const match = await bcrypt.compare(password, user.password);
+      if (!match) return res.status(400).json({ error: "Invalid credentials" });
+  
+      const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "1h" });
+      
+      // Remove password before sending response
+      const { password: _, ...userData } = user;
+      
+      res.json({ 
+        token,
+        user: userData
+      });
     } catch (error) {
-        res.status(500).json({ error: "Server error" });
+      res.status(500).json({ error: "Server error" });
     }
-});
+  });
+
+
 
 
 
@@ -147,7 +182,7 @@ app.get('/api/users', async (req, res, next) => {
     }
 });
 
-// GET user profile
+// GET user profile, direct lookup
 app.get("/api/users/:id", async (req, res, next) => {
     try {
         // Validate that the id is a valid integer
@@ -169,6 +204,77 @@ app.get("/api/users/:id", async (req, res, next) => {
         next(error);
     }
 });
+
+app.get('/api/users/me', authenticate, async (req, res) => {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          name: true,
+          profilePicUrl: true,
+          bio: true,
+          websiteUrl: true,
+          socialLinks: true,
+          isAdmin: true,
+          city: true,
+          country: true,
+          shippingOption: true,
+          shippingResponsibility: true,
+          // Include counts for relationships if needed
+          _count: {
+            select: {
+              posts: true,
+              collections: true,
+              followers: true,
+              follows: true
+            }
+          }
+        }
+      });
+      
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      res.json(user);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch user data" });
+    }
+  });
+
+//   for public profile viewing
+  app.get('/api/users/:username', async (req, res) => {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { username: req.params.username },
+        select: {
+          // Public fields only
+          username: true,
+          name: true,
+          profilePicUrl: true,
+          bio: true,
+          websiteUrl: true,
+          city: true,
+          country: true,
+          _count: {
+            select: {
+              posts: true,
+              followers: true,
+              follows: true
+            }
+          }
+        }
+      });
+      
+      if (!user) return res.status(404).json({ error: "User not found" });
+      res.json(user);
+    } catch (error) {
+      res.status(500).json({ error: "Server error" });
+    }
+  });
 
 app.put('/api/users/:id', authenticate, async (req, res) => {
     const userId = req.params.id;
@@ -210,37 +316,55 @@ app.delete("/api/users/:id", authenticate, async (req, res) => {
 // ----- Post ROUTES -------
 
 // GET ALL Posts
-app.get("/api/posts", async (req, res, next) => {
+app.get("/api/posts", async (req, res) => {
     try {
-        const { category } = req.query;
-
-        const posts = await prisma.post.findMany({
-            where: {
-                ...(category ? {
-                    category: {
-                        name: {
-                            equals: category,
-                            mode: "insensitive",
-                        },
-                    },
-                } : {}),
+      const { category } = req.query;
+  
+      const posts = await prisma.post.findMany({
+        where: {
+          ...(category ? {
+            category: {
+              name: {
+                equals: category,
+                mode: "insensitive",
+              },
             },
-            include: {
-                user: true,
-                category: true,
-                images: true,
-                media: true,
-                likes: true,
-                favorites: true,
-                comments: true,
-                collections: true,
-            },
-        });
-        res.json(posts);
+          } : {}),
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              profilePicUrl: true
+            }
+          },
+          category: true,
+          images: true,
+          _count: {
+            select: {
+              likes: true,
+              comments: true
+            }
+          }
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      });
+  
+      res.json(posts);
     } catch (error) {
-        next(error);
+      console.error("Error fetching posts:", error);
+      res.status(500).json({ 
+        error: "Failed to fetch posts",
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
     }
-});
+  });
+
+
+
 
 // GET SINGLE Post
 app.get("/api/posts/:id", async (req, res, next) => {
@@ -262,6 +386,9 @@ app.get("/api/posts/:id", async (req, res, next) => {
         next(error);
     }
 });
+
+
+
 
 
 // Get posts or callouts by a specific user
@@ -297,57 +424,84 @@ app.get('/api/posts/users/:id', authenticate, async (req, res, next) => {
 
 
 
-// CREATE a new post
-app.post("/api/posts", authenticate, async (req, res, next) => {
+app.post("/api/posts", authenticate, async (req, res) => {
     try {
-        const {title,
-            description,
-            isAvailable,
-            shippingCost,
-            shippingResponsibility,
-            shippingOption,
-            isFeatured,
-            categoryId,
-            city,
-            country,
-            type,} = req.body;
-
-            if (type !== 'post' && type !== 'callout') {
-                return res.status(400).json({ error: 'Invalid type. Must be "post" or "callout".' });
-              }
-
-        const newPost = await prisma.post.create({
-            data: {
-                title,
-                description,
-                isAvailable,
-                shippingCost,
-                shippingResponsibility,
-                shippingOption,
-                isFeatured,
-                type,
-                userId: req.user.id,
-                categoryId,
-                city,
-                country,
-            },
-            include: {
-                category: true,
-            },
+      // Handle text fields from form-data
+      const { 
+        title,
+        description,
+        category,
+        shippingOption = 'PICKUP',
+        shippingResponsibility = 'SHARED',
+        city = '',
+        country = '',
+        type = 'post'
+      } = req.body;
+  
+      // Validate required fields
+      if (!title || !description || !category) {
+        return res.status(400).json({ 
+          error: "Missing required fields",
+          details: {
+            title: !title && "Required",
+            description: !description && "Required",
+            category: !category && "Required"
+          }
         });
-
-
-        if (newPost.type === 'post') {
-            console.log('New post created:', newPost);
-        } else if (newPost.type === 'callout') {
-            console.log('New callout created:', newPost);
+      }
+  
+      // Handle file upload
+      let imageUrl = null;
+      if (req.files?.image) {
+        const imageFile = req.files.image;
+        const uniqueName = `${Date.now()}-${imageFile.name.replace(/\s+/g, '-')}`;
+        const uploadPath = path.join(__dirname, 'uploads', uniqueName);
+        
+        await imageFile.mv(uploadPath);
+        imageUrl = `/uploads/${uniqueName}`;
+      }
+  
+      // Create post in database
+      const newPost = await prisma.post.create({
+        data: {
+          title,
+          description,
+          isAvailable: true,
+          shippingOption,
+          shippingResponsibility,
+          type,
+          city,
+          country,
+          userId: req.user.id,
+          categoryId: parseInt(category),
+          ...(imageUrl && {
+            images: {
+              create: { url: imageUrl }
+            }
+          })
+        },
+        include: {
+          category: true,
+          user: {
+            select: {
+              id: true,
+              username: true,
+              profilePicUrl: true
+            }
+          },
+          ...(imageUrl && { images: true })
         }
-
-        res.json(newPost);
+      });
+  
+      res.status(201).json(newPost);
     } catch (error) {
-        next(error);
+      console.error("Post creation error:", error);
+      res.status(500).json({ 
+        error: "Failed to create post",
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
     }
-});
+  });
 
 // EDIT
 app.put("/api/posts/:id", authenticate, async (req, res, next) => {
