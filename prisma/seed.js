@@ -4363,7 +4363,19 @@ for (const user of users) {
        },
        {
         name: "Outfits",
-        userId: users[1].id
+        userId: users[0].id
+       },
+       {
+        name: "Beauty finds",
+        userId: users[0].id
+       },
+       {
+        name: "Supernova niche finds",
+        userId: users[0].id
+       },
+       {
+        name: "Interior Design",
+        userId: users[0].id
        },
     ];
     for (const collection of collections) {
