@@ -4,11 +4,12 @@ const cors = require("cors");
 const morgan = require("morgan");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-
+const path = require('path');
 const shippo = require("shippo");
 const fileUpload = require('express-fileupload');
-
+const fs = require('fs');
 const app = express();
+
 const PORT = 3000;
 
 const prisma = require("./prisma");
@@ -19,10 +20,10 @@ app.use(express.json());
 app.use(require("morgan")("dev"));
 // Add this with your other middleware
 app.use(fileUpload({
-    useTempFiles: false,
-    limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+    abortOnLimit: true
   }));
-  
+app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
 const JWT_SECRET = process.env.JWT_SECRET || "secretcoven";
 
@@ -119,7 +120,7 @@ app.post("/api/register-step2", async (req, res, next) => {
                 profilePicUrl },
         });
 
-        const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "1h" });
+        const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "7d" });
 
         res.json({ message: "Registration complete.", token, user });
 
@@ -316,55 +317,37 @@ app.delete("/api/users/:id", authenticate, async (req, res) => {
 // ----- Post ROUTES -------
 
 // GET ALL Posts
-app.get("/api/posts", async (req, res) => {
+app.get("/api/posts", async (req, res, next) => {
     try {
-      const { category } = req.query;
-  
-      const posts = await prisma.post.findMany({
-        where: {
-          ...(category ? {
-            category: {
-              name: {
-                equals: category,
-                mode: "insensitive",
-              },
+        const { category } = req.query;
+
+        const posts = await prisma.post.findMany({
+            where: {
+                ...(category ? {
+                    category: {
+                        name: {
+                            equals: category,
+                            mode: "insensitive",
+                        },
+                    },
+                } : {}),
             },
-          } : {}),
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              profilePicUrl: true
-            }
-          },
-          category: true,
-          images: true,
-          _count: {
-            select: {
-              likes: true,
-              comments: true
-            }
-          }
-        },
-        orderBy: {
-          createdAt: 'desc'
-        }
-      });
-  
-      res.json(posts);
+            include: {
+                user: true,
+                category: true,
+                images: true,
+                media: true,
+                likes: true,
+                favorites: true,
+                comments: true,
+                collections: true,
+            },
+        });
+        res.json(posts);
     } catch (error) {
-      console.error("Error fetching posts:", error);
-      res.status(500).json({ 
-        error: "Failed to fetch posts",
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
+        next(error);
     }
-  });
-
-
-
+});
 
 // GET SINGLE Post
 app.get("/api/posts/:id", async (req, res, next) => {
@@ -388,13 +371,10 @@ app.get("/api/posts/:id", async (req, res, next) => {
 });
 
 
-
-
-
 // Get posts or callouts by a specific user
 app.get('/api/posts/users/:id', authenticate, async (req, res, next) => {
     const { id } = req.params; 
-    const { type } = req.query;  // Default to 'post' if no type is provided
+    const { type } = req.query;  
 
     const userId = parseInt(id);
     if (isNaN(userId)) {
@@ -411,9 +391,13 @@ app.get('/api/posts/users/:id', authenticate, async (req, res, next) => {
 
         if (posts.length === 0) {
             console.log("No posts found for this user with type:", type);
+            return res.status(404).json({ message: `No ${type} found for this user` });
         }
 
-        res.json(posts);
+        res.json({
+            status: 'success',
+            data: posts,
+        });
     } catch (error) {
         console.error("Error fetching posts:", error); 
         res.status(500).json({ error: "Error fetching posts" });
@@ -423,24 +407,26 @@ app.get('/api/posts/users/:id', authenticate, async (req, res, next) => {
 
 
 
-
+// Updated POST route with float conversion for shippingCost
 app.post("/api/posts", authenticate, async (req, res) => {
     try {
-      // Handle text fields from form-data
-      const { 
+      console.log('Request body:', req.body);
+      console.log('Files:', req.files);
+  
+      const {
         title,
         description,
         category,
+        shippingCost,
         shippingOption = 'PICKUP',
         shippingResponsibility = 'SHARED',
         city = '',
         country = '',
-        type = 'post'
+        type
       } = req.body;
   
-      // Validate required fields
       if (!title || !description || !category) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: "Missing required fields",
           details: {
             title: !title && "Required",
@@ -450,30 +436,58 @@ app.post("/api/posts", authenticate, async (req, res) => {
         });
       }
   
-      // Handle file upload
+      const shippingCostFloat = parseFloat(shippingCost);
+      if (isNaN(shippingCostFloat)) {
+        return res.status(400).json({ error: "Invalid shipping cost format" });
+      }
+  
+      // Normalize and validate enums
+      const validShippingOptions = ["PICKUP", "SHIPPING", "DROPOFF"];
+      const validShippingResponsibilities = ["GIVER", "RECEIVER", "SHARED"];
+  
+      const normalizedOption = shippingOption.toUpperCase();
+      const normalizedResponsibility = shippingResponsibility.toUpperCase();
+  
+      if (!validShippingOptions.includes(normalizedOption)) {
+        return res.status(400).json({ error: "Invalid shipping option" });
+      }
+      if (!validShippingResponsibilities.includes(normalizedResponsibility)) {
+        return res.status(400).json({ error: "Invalid shipping responsibility" });
+      }
+  
+      const categoryRecord = await prisma.category.upsert({
+        where: { name: category },
+        create: { name: category },
+        update: {}
+      });
+  
       let imageUrl = null;
       if (req.files?.image) {
         const imageFile = req.files.image;
         const uniqueName = `${Date.now()}-${imageFile.name.replace(/\s+/g, '-')}`;
-        const uploadPath = path.join(__dirname, 'uploads', uniqueName);
-        
+        const uploadPath = path.join(__dirname, 'public/uploads', uniqueName);
+  
+        if (!fs.existsSync(path.join(__dirname, 'public/uploads'))) {
+          fs.mkdirSync(path.join(__dirname, 'public/uploads'), { recursive: true });
+        }
+  
         await imageFile.mv(uploadPath);
         imageUrl = `/uploads/${uniqueName}`;
       }
   
-      // Create post in database
       const newPost = await prisma.post.create({
         data: {
           title,
           description,
           isAvailable: true,
-          shippingOption,
-          shippingResponsibility,
+          shippingCost: shippingCostFloat,
+          shippingOption: normalizedOption,
+          shippingResponsibility: normalizedResponsibility,
           type,
           city,
           country,
           userId: req.user.id,
-          categoryId: parseInt(category),
+          categoryId: categoryRecord.id,
           ...(imageUrl && {
             images: {
               create: { url: imageUrl }
@@ -496,12 +510,18 @@ app.post("/api/posts", authenticate, async (req, res) => {
       res.status(201).json(newPost);
     } catch (error) {
       console.error("Post creation error:", error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: "Failed to create post",
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        details: process.env.NODE_ENV === 'development' ? {
+          message: error.message,
+          stack: error.stack
+        } : undefined
       });
     }
   });
+  
+
+
 
 // EDIT
 app.put("/api/posts/:id", authenticate, async (req, res, next) => {
@@ -855,6 +875,25 @@ app.post("/api/collections", authenticate, async (req, res, next) => {
         next(error);
     }
 });
+
+app.put('/api/collections/:id', async (req, res) => {
+    const { id } = req.params;
+    const { name } = req.body;
+
+    try {
+        const updatedCollection = await prisma.collection.update({
+            where: { id: Number(id) },
+            data: { name },
+        });
+        res.json(updatedCollection);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to update collection' });
+    }
+});
+
+
+
 
 app.post("/api/collections/:id/add", authenticate, async (req, res, next) => {
     try {
