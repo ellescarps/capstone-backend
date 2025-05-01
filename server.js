@@ -15,7 +15,14 @@ const PORT = 3000;
 const prisma = require("./prisma");
 const { category } = require("./prisma");
 
-app.use(cors({ origin: /localhost/ }));
+
+app.use(cors({
+    origin: 'https://capstone-frontend-vlyb.onrender.com', 
+    methods: ['GET', 'POST', 'PUT', 'DELETE'], 
+    credentials: true, 
+  }));
+
+
 app.use(express.json());
 app.use(require("morgan")("dev"));
 // Add this with your other middleware
